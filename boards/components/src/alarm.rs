@@ -27,29 +27,27 @@ use kernel::component::Component;
 use kernel::create_capability;
 use kernel::hil::time;
 use kernel::static_init_half;
+use kernel::StaticUninitializedBuffer;
 
 // Setup static space for the objects.
 #[macro_export]
-macro_rules! alarm_mux_component_helper {
+macro_rules! alarm_mux_component_buffer {
     ($A:ty) => {{
         use capsules::virtual_alarm::MuxAlarm;
-        use core::mem::MaybeUninit;
-        static mut BUF: MaybeUninit<MuxAlarm<'static, $A>> = MaybeUninit::uninit();
-        &mut BUF
+        $crate::static_buf!(MuxAlarm<'static, $A>)
     };};
 }
 
 // Setup static space for the objects.
 #[macro_export]
-macro_rules! alarm_component_helper {
+macro_rules! alarm_component_buffer {
     ($A:ty) => {{
         use capsules::alarm::AlarmDriver;
         use capsules::virtual_alarm::VirtualMuxAlarm;
-        use core::mem::MaybeUninit;
-        static mut BUF1: MaybeUninit<VirtualMuxAlarm<'static, $A>> = MaybeUninit::uninit();
-        static mut BUF2: MaybeUninit<AlarmDriver<'static, VirtualMuxAlarm<'static, $A>>> =
-            MaybeUninit::uninit();
-        (&mut BUF1, &mut BUF2)
+        (
+            $crate::static_buf!(VirtualMuxAlarm<'static, $A>),
+            $crate::static_buf!(AlarmDriver<'static, VirtualMuxAlarm<'static, $A>>),
+        )
     };};
 }
 
@@ -64,15 +62,11 @@ impl<A: 'static + time::Alarm<'static>> AlarmMuxComponent<A> {
 }
 
 impl<A: 'static + time::Alarm<'static>> Component for AlarmMuxComponent<A> {
-    type StaticInput = &'static mut MaybeUninit<MuxAlarm<'static, A>>;
+    type StaticInput = StaticUninitializedBuffer<MuxAlarm<'static, A>>;
     type Output = &'static MuxAlarm<'static, A>;
 
     unsafe fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
-        let mux_alarm = static_init_half!(
-            static_buffer,
-            MuxAlarm<'static, A>,
-            MuxAlarm::new(self.alarm)
-        );
+        let mux_alarm = static_buffer.initialize(MuxAlarm::new(self.alarm));
 
         time::Alarm::set_client(self.alarm, mux_alarm);
         mux_alarm
@@ -98,24 +92,19 @@ impl<A: 'static + time::Alarm<'static>> AlarmDriverComponent<A> {
 
 impl<A: 'static + time::Alarm<'static>> Component for AlarmDriverComponent<A> {
     type StaticInput = (
-        &'static mut MaybeUninit<VirtualMuxAlarm<'static, A>>,
-        &'static mut MaybeUninit<AlarmDriver<'static, VirtualMuxAlarm<'static, A>>>,
+        StaticUninitializedBuffer<VirtualMuxAlarm<'static, A>>,
+        StaticUninitializedBuffer<AlarmDriver<'static, VirtualMuxAlarm<'static, A>>>,
     );
     type Output = &'static AlarmDriver<'static, VirtualMuxAlarm<'static, A>>;
 
-    unsafe fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
+    unsafe fn finalize(self, static_buffers: Self::StaticInput) -> Self::Output {
         let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
 
-        let virtual_alarm1 = static_init_half!(
-            static_buffer.0,
-            VirtualMuxAlarm<'static, A>,
-            VirtualMuxAlarm::new(self.alarm_mux)
-        );
-        let alarm = static_init_half!(
-            static_buffer.1,
-            AlarmDriver<'static, VirtualMuxAlarm<'static, A>>,
-            AlarmDriver::new(virtual_alarm1, self.board_kernel.create_grant(&grant_cap))
-        );
+        let virtual_alarm1 = static_buffers.0.initialize(VirtualMuxAlarm::new(self.alarm_mux));
+        let alarm = static_buffers.1.initialize(AlarmDriver::new(
+            virtual_alarm1,
+            self.board_kernel.create_grant(&grant_cap),
+        ));
 
         time::Alarm::set_client(virtual_alarm1, alarm);
         alarm

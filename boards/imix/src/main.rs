@@ -17,8 +17,8 @@ use capsules::virtual_i2c::MuxI2C;
 use capsules::virtual_spi::{MuxSpiMaster, VirtualSpiMasterDevice};
 use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
+use kernel::component::Component;
 use kernel::hil::i2c::I2CMaster;
-use kernel::component::{Component, CreateComponent};
 use kernel::hil::radio;
 #[allow(unused_imports)]
 use kernel::hil::radio::{RadioConfig, RadioData};
@@ -303,13 +303,11 @@ pub unsafe fn reset_handler() {
 
     // # TIMER
     let ast = &sam4l::ast::AST;
-    let mux_alarm =
-        AlarmMuxComponent::create(ast, components::alarm_mux_component_buf!(sam4l::ast::Ast));
+    let mux_alarm = AlarmMuxComponent::new(ast)
+        .finalize(components::alarm_mux_component_buffer!(sam4l::ast::Ast));
     ast.configure(mux_alarm);
-    let alarm = AlarmDriverComponent::create(
-        (board_kernel, mux_alarm),
-        components::alarm_component_buf!(sam4l::ast::Ast),
-    );
+    let alarm = AlarmDriverComponent::new(board_kernel, mux_alarm)
+        .finalize(components::alarm_component_buffer!(sam4l::ast::Ast));
 
     // # I2C and I2C Sensors
     let mux_i2c = static_init!(MuxI2C<'static>, MuxI2C::new(&sam4l::i2c::I2C2));
