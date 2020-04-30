@@ -9,6 +9,7 @@ use kernel::common::registers::{register_bitfields, ReadOnly, ReadWrite};
 use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::ReturnCode;
+use kernel::debug_gpio;
 
 #[repr(C)]
 pub struct UartRegisters {
@@ -102,7 +103,7 @@ impl Uart<'a> {
         //           div + 1
         let divisor = (self.clock_frequency / baud_rate) - 1;
 
-        regs.div.write(div::div.val(divisor));
+        // regs.div.write(div::div.val(divisor));
     }
 
     fn enable_tx_interrupt(&self) {
@@ -197,6 +198,7 @@ impl hil::uart::Transmit<'a> for Uart<'a> {
         tx_data: &'static mut [u8],
         tx_len: usize,
     ) -> (ReturnCode, Option<&'static mut [u8]>) {
+        // debug_gpio!(0, clear);
         let regs = self.registers;
 
         if tx_len == 0 {

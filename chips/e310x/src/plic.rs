@@ -41,9 +41,12 @@ pub unsafe fn clear_all_pending() {
 /// Enable all interrupts.
 pub unsafe fn enable_all() {
     let plic: &PlicRegisters = &*PLIC_BASE;
-    for enable in plic.enable.iter() {
-        enable.set(0xFFFF_FFFF);
-    }
+    // for enable in plic.enable.iter() {
+    //     enable.set(0xFFFF_FFFF);
+    // }
+
+    plic.enable[0].set(0xFFFF_FFFF);
+    plic.enable[1].set(0);
 
     // Set some default priority for each interrupt. This is not really used
     // at this point.
@@ -89,7 +92,10 @@ pub unsafe fn complete(index: u32) {
 pub unsafe fn has_pending() -> bool {
     let plic: &PlicRegisters = &*PLIC_BASE;
 
-    plic.pending.iter().fold(0, |i, pending| pending.get() | i) != 0
+    (plic.pending[0].get() & plic.enable[0].get()) != 0
+    // let a = (plic.pending.get() & plic.enable.get()) != 0;
+
+    // plic.pending.iter().fold(0, |i, pending| pending.get() | i) != 0
 }
 
 /// This is a generic implementation. There may be board specific versions as

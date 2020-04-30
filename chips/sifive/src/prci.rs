@@ -35,8 +35,11 @@ register_bitfields![u32,
         sel OFFSET(16) NUMBITS(1) [],
         pllq OFFSET(10) NUMBITS(2) [],
         pllf OFFSET(4) NUMBITS(6) [],
-        pllr OFFSET(0) NUMBITS(3) [
-            R1 = 0
+        pllr OFFSET(0) NUMBITS(2) [
+            R1 = 0,
+            R2 = 1,
+            R3 = 2,
+            R4 = 3
         ]
     ],
     plloutdiv [
@@ -68,7 +71,43 @@ impl Prci {
         match frequency {
             ClockFrequency::Freq18Mhz => {
                 // 4, // this seems wrong, but it works??
-                regs.hfrosccfg.modify(hfrosccfg::div.val(4));
+                // regs.hfrosccfg.modify(hfrosccfg::enable::SET + hfrosccfg::div.val(3));
+
+
+                // regs.hfxosccfg.modify(hfxosccfg::enable::SET);
+                // regs.hfrosccfg.modify(hfrosccfg::enable::CLEAR );
+
+
+
+                // // disable pll so that hfroscclk drives clock directly
+                // regs.pllcfg.modify(pllcfg::sel::CLEAR);
+
+
+
+
+                // // Enable external oscillator
+                // regs.hfxosccfg.modify(hfxosccfg::enable::SET);
+                // // Choose external oscillator for PLL
+                // //
+                // // When used to drive the PLL, the 16 MHz crystal oscillator
+                // // output frequency must be divided by two in the first-stage
+                // // divider of the PLL (i.e., ) to provide an 8 MHz reference
+                // // clock to the VCO.
+                // //
+                // // R=2
+                // // F=48
+                // // Q=8
+                // regs.pllcfg.write(pllcfg::pllr::R2 +
+                //     pllcfg::pllf.val(23) +
+                //     pllcfg::pllq.val(8) +
+                //     pllcfg::bypass::CLEAR +
+                //     pllcfg::sel::SET +
+                //     pllcfg::refsel::SET);
+
+                // // regs.plloutdiv.write(plloutdiv::div.val(0) + plloutdiv::divby1::SET);
+                // regs.plloutdiv.write(plloutdiv::div.val(0) + plloutdiv::divby1::CLEAR);
+
+
             }
             ClockFrequency::Freq384Mhz => {}
         };

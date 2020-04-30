@@ -3,6 +3,7 @@
 use core::fmt::Write;
 use kernel;
 use kernel::debug;
+use kernel::debug_gpio;
 use rv32i;
 use rv32i::csr;
 
@@ -56,12 +57,19 @@ impl kernel::Chip for E310x {
                         let pin = &gpio::PORT[(int_pin - interrupts::GPIO0) as usize];
                         pin.handle_interrupt();
                     }
-                    _ => debug!("Pidx {}", interrupt),
+                    _ => {
+                        debug!("Pidx {}", interrupt);
+                        if interrupt < 4 {
+                            debug_gpio!(0, clear);
+                        }
+                    },
                 }
 
                 // Mark that we are done with this interrupt and the hardware
                 // can clear it.
                 plic::complete(interrupt);
+
+                debug_gpio!(2, toggle);
             }
         }
     }
@@ -112,15 +120,15 @@ pub unsafe fn handle_trap() {
                 // this includes UART, GPIO pins, etc
                 rv32i::csr::mcause::Interrupt::MachineExternal => {
                     // just send out a message that the interrupt occurred and complete it
-                    let ext_interrupt_wrapper = plic::next_pending();
-                    match ext_interrupt_wrapper {
-                        None => (),
-                        Some(ext_interrupt_id) => {
-                            debug!("interrupt triggered {}\n", ext_interrupt_id);
-                            plic::complete(ext_interrupt_id);
-                            plic::suppress_all();
-                        }
-                    }
+                    // let ext_interrupt_wrapper = plic::next_pending();
+                    // match ext_interrupt_wrapper {
+                    //     None => (),
+                    //     Some(ext_interrupt_id) => {
+                    //         debug!("interrupt triggered {}\n", ext_interrupt_id);
+                    //         plic::complete(ext_interrupt_id);
+                    //         plic::suppress_all();
+                    //     }
+                    // }
                 }
                 // should never occur
                 rv32i::csr::mcause::Interrupt::UserExternal => (),

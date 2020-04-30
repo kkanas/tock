@@ -20,6 +20,7 @@ use kernel::hil;
 use kernel::Platform;
 use kernel::{create_capability, debug, static_init};
 use rv32i::csr;
+use kernel::debug_gpio;
 
 pub mod io;
 //
@@ -83,6 +84,8 @@ pub unsafe fn reset_handler() {
     // only machine mode
     rv32i::configure_trap_handler(rv32i::PermissionMode::Machine);
 
+
+
     // initialize capabilities
     let process_mgmt_cap = create_capability!(capabilities::ProcessManagementCapability);
     let memory_allocation_cap = create_capability!(capabilities::MemoryAllocationCapability);
@@ -94,6 +97,8 @@ pub unsafe fn reset_handler() {
     e310x::pwm::PWM2.disable();
 
     e310x::prci::PRCI.set_clock_frequency(sifive::prci::ClockFrequency::Freq18Mhz);
+
+
 
     let main_loop_cap = create_capability!(capabilities::MainLoopCapability);
 
@@ -107,24 +112,20 @@ pub unsafe fn reset_handler() {
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
 
+
+
     // Configure kernel debug gpios as early as possible
     kernel::debug::assign_gpios(
         Some(&e310x::gpio::PORT[22]), // Red
-        None,
-        None,
+        Some(&e310x::gpio::PORT[19]), // Green
+        Some(&e310x::gpio::PORT[21]), // Blue
     );
 
     let chip = static_init!(e310x::chip::E310x, e310x::chip::E310x::new());
     CHIP = Some(chip);
 
-    // Need to enable all interrupts for Tock Kernel
-    chip.enable_plic_interrupts();
 
-    // enable interrupts globally
-    csr::CSR
-        .mie
-        .modify(csr::mie::mie::mext::SET + csr::mie::mie::msoft::SET + csr::mie::mie::mtimer::SET);
-    csr::CSR.mstatus.modify(csr::mstatus::mstatus::mie::SET);
+
 
     // Create a shared UART channel for the console and for kernel debug.
     let uart_mux = components::console::UartMuxComponent::new(
@@ -133,6 +134,11 @@ pub unsafe fn reset_handler() {
         dynamic_deferred_caller,
     )
     .finalize(());
+
+
+
+
+
 
     // Initialize some GPIOs which are useful for debugging.
     // Red LED
@@ -145,7 +151,7 @@ pub unsafe fn reset_handler() {
 
     // Blue LED
     hil::gpio::Pin::make_output(&e310x::gpio::PORT[21]);
-    hil::gpio::Pin::clear(&e310x::gpio::PORT[21]);
+    hil::gpio::Pin::set(&e310x::gpio::PORT[21]);
 
     e310x::uart::UART0.initialize_gpio_pins(&e310x::gpio::PORT[17], &e310x::gpio::PORT[16]);
 
@@ -181,6 +187,23 @@ pub unsafe fn reset_handler() {
 
     let lldb = components::lldb::LowLevelDebugComponent::new(board_kernel, uart_mux).finalize(());
 
+    // Need to enable all interrupts for Tock Kernel
+    chip.enable_plic_interrupts();
+
+
+
+    // enable interrupts globally
+    csr::CSR
+        .mie
+        .modify(csr::mie::mie::mext::SET + csr::mie::mie::msoft::SET + csr::mie::mie::mtimer::SET);
+
+
+
+    csr::CSR.mstatus.modify(csr::mstatus::mstatus::mie::SET);
+
+
+
+
     // Need two debug!() calls to actually test with QEMU. QEMU seems to have
     // a much larger UART TX buffer (or it transmits faster).
     debug!("HiFive1 initialization complete.");
@@ -204,22 +227,24 @@ pub unsafe fn reset_handler() {
         lldb: lldb,
     };
 
-    kernel::procs::load_processes(
-        board_kernel,
-        chip,
-        core::slice::from_raw_parts(
-            &_sapps as *const u8,
-            &_eapps as *const u8 as usize - &_sapps as *const u8 as usize,
-        ),
-        &mut APP_MEMORY,
-        &mut PROCESSES,
-        FAULT_RESPONSE,
-        &process_mgmt_cap,
-    )
-    .unwrap_or_else(|err| {
-        debug!("Error loading processes!");
-        debug!("{:?}", err);
-    });
+    // kernel::procs::load_processes(
+    //     board_kernel,
+    //     chip,
+    //     core::slice::from_raw_parts(
+    //         &_sapps as *const u8,
+    //         &_eapps as *const u8 as usize - &_sapps as *const u8 as usize,
+    //     ),
+    //     &mut APP_MEMORY,
+    //     &mut PROCESSES,
+    //     FAULT_RESPONSE,
+    //     &process_mgmt_cap,
+    // )
+    // .unwrap_or_else(|err| {
+    //     debug!("Error loading processes!");
+    //     debug!("{:?}", err);
+    // });
+
+
 
     board_kernel.kernel_loop(&hifive1, chip, None, &main_loop_cap);
 }
