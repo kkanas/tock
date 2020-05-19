@@ -1004,7 +1004,7 @@ impl<C: Chip> ProcessType for Process<'a, C> {
             self.debug.map(|debug| {
                 debug.app_stack_start_pointer = Some(stack_pointer);
 
-                // We also reset the minimum stack pointer because whatever value
+                // We also reset the minimum stack pointer tatic mut Tbecause whatever value
                 // we had could be entirely wrong by now.
                 debug.min_stack_pointer = stack_pointer;
             });
@@ -1526,7 +1526,7 @@ fn exceeded_check(size: usize, allocated: usize) -> &'static str {
 
 impl<C: 'static + Chip> Process<'a, C> {
     #[allow(clippy::cast_ptr_alignment)]
-    crate unsafe fn create(
+    pub unsafe fn create(
         kernel: &'static Kernel,
         chip: &'static C,
         app_flash: &'static [u8],

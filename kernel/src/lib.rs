@@ -49,6 +49,12 @@ pub use crate::platform::{ClockInterface, NoClockControl, NO_CLOCK_CONTROL};
 pub use crate::returncode::ReturnCode;
 pub use crate::sched::Kernel;
 
+#[cfg(feature = "emulation")]
+pub mod kernel_emulation {
+    pub use crate::process::*;
+    pub use crate::callback::CallbackId;
+}
+
 // Export only select items from the process module. To remove the name conflict
 // this cannot be called `process`, so we use a shortened version. These
 // functions and types are used by board files to setup the platform and setup
