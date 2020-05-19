@@ -985,7 +985,7 @@ impl<C: Chip> ProcessType for Process<'_, C> {
             self.debug.map(|debug| {
                 debug.app_stack_start_pointer = Some(stack_pointer);
 
-                // We also reset the minimum stack pointer because whatever value
+                // We also reset the minimum stack pointer tatic mut Tbecause whatever value
                 // we had could be entirely wrong by now.
                 debug.min_stack_pointer = stack_pointer;
             });

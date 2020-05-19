@@ -1,0 +1,16 @@
+[package]
+name = "tock-host-testing"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+kernel = { path = "../kernel", features = ["emulation"] }
+capsules = { path = "../capsules" }
+components = { path = "../boards/components" }
+tock-cells = { path = "../libraries/tock-cells" }
+host-emulation = { path = "../libraries/host-emulation" }
+
+tempfile = "3.1.0"
+zerocopy = "0.3.0"
+clap = "2.33.0"
+
