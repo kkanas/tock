@@ -11,8 +11,11 @@ set -e
 set -u
 set -x
 
+# Install rust stuff that we need
 curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly-2020-03-06
 
+# And fixup path for the newly installed rust stuff
 export PATH="$PATH:$HOME/.cargo/bin"
 
+# Do the actual work
 tools/build-all-docs.sh
