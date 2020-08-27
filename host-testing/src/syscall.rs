@@ -1,6 +1,7 @@
 use core::fmt::Write;
 
 use kernel;
+use kernel::debug;
 use kernel::syscall::ContextSwitchReason;
 
 use crate::process::UnixProcess;
@@ -100,7 +101,7 @@ impl kernel::syscall::UserspaceKernelBoundary for SysCall {
         stack_pointer: *const usize,
         state: &mut Self::StoredState,
     ) -> (*mut usize, ContextSwitchReason) {
-        println!("Switch");
+        debug!("Switch");
         let process = match state.process {
             Some(p) => p,
             None => return (stack_pointer as *mut usize, ContextSwitchReason::Fault),
@@ -112,7 +113,7 @@ impl kernel::syscall::UserspaceKernelBoundary for SysCall {
             let transport = self.get_transport();
 
             if let Err(e) = process.start(transport.rx_path(), transport.tx_path()) {
-                println!("Failed to start process {}", e);
+                debug!("Failed to start process {}", e);
                 return (stack_pointer as *mut usize, ContextSwitchReason::Fault);
             }
             return_value = None;
@@ -124,12 +125,12 @@ impl kernel::syscall::UserspaceKernelBoundary for SysCall {
         let syscall_args = match process.unyield(&self.get_transport(), return_value) {
             Ok(syscall) => syscall,
             Err(e) => {
-                println!("Failed to resume process: {}", e);
+                debug!("Failed to resume process: {}", e);
                 return (stack_pointer as *mut usize, ContextSwitchReason::Fault);
             }
         };
 
-        println!("{:?}", syscall_args);
+        debug!("{:?}", syscall_args);
         let syscall = kernel::syscall::arguments_to_syscall(
             syscall_args.syscall_number as u8,
             syscall_args.args[0],
@@ -150,7 +151,7 @@ impl kernel::syscall::UserspaceKernelBoundary for SysCall {
                 } = s
                 {
                     // Translate allow region address to kernel memory.
-                    println!("Translating allow region.");
+                    debug!("Translating allow region.");
                     allow_address = process.allow(allow_address as *const u8, allow_size);
 
                     s = kernel::syscall::Syscall::ALLOW {

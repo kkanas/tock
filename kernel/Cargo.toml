@@ -8,5 +8,3 @@ edition = "2018"
 tock-registers = { path = "../libraries/tock-register-interface" }
 tock-cells = { path = "../libraries/tock-cells" }
 
-[features]
-emulation = []

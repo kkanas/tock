@@ -91,7 +91,7 @@ impl LowerHalf {
         match interrupt {
             Ok(interrupt) => self.pending.push(interrupt),
             Err(e) => {
-                kernel::debug!("Failed to receive interrupt {}", e);
+                kernel::debug!("Failed to receive interrupt: {}", e);
             }
         };
     }

@@ -7,6 +7,7 @@ use kernel::component::Component;
 use kernel::AppId;
 use kernel::Platform;
 use kernel::{create_capability, static_init};
+use kernel::debug;
 
 mod chip;
 mod interrupt;
@@ -51,17 +52,16 @@ impl std::fmt::Display for EmulationError {
     }
 }
 
-static mut UNINITIALIZED_PROCESSES: [Option<&'static UnixProcess>; 4] = [None, None, None, None];
+static mut UNINITIALIZED_PROCESSES: [Option<&'static UnixProcess>; 4] =
+    [None, None, None, None];
 
 static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; 4] =
     [None, None, None, None];
 
 static mut CHIP: Option<&'static chip::HostChip> = None;
 
-/// Dummy buffer that causes the linker to reserve enough space for the stack.
-#[no_mangle]
-#[link_section = ".stack_buffer"]
-pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
+static mut EXTERNAL_PROCESS_CAP: &dyn capabilities::ExternalProcessCapability =
+    &create_capability!(capabilities::ExternalProcessCapability);
 
 /// A structure representing this platform that holds references to all
 /// capsules for this platform.
@@ -111,14 +111,15 @@ pub unsafe fn reset_handler() {
 
     let stdin = static_init!(io::Stdin, io::stdin());
     let stdout = static_init!(io::Stdout, io::stdout());
-    let uart = static_init!(uart::UartIO, uart::UartIO::new(stdin, stdout));
+    let uart = static_init!(
+        uart::UartIO, uart::UartIO::new(stdin, stdout, dynamic_deferred_caller));
 
     let uart_mux =
         components::console::UartMuxComponent::new(uart, 0, dynamic_deferred_caller).finalize(());
 
     let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
 
-    components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
+    components::debug_writer::DebugWriterNoMuxComponent::new(uart).finalize(());
 
     let lldb = components::lldb::LowLevelDebugComponent::new(board_kernel, uart_mux).finalize(());
 
@@ -135,14 +136,15 @@ pub unsafe fn reset_handler() {
         };
         let state = static_init!(HostStoredState, HostStoredState::new(uninitialized_process));
         match EmulatedProcess::<chip::HostChip>::create(
-            AppId::new(board_kernel, i, i),
+            AppId::new_external(board_kernel, i, i, EXTERNAL_PROCESS_CAP),
             "Sample Process",
             chip,
             board_kernel,
             state,
+            EXTERNAL_PROCESS_CAP,
         ) {
             Ok(p) => PROCESSES[i] = Some(static_init!(process::EmulatedProcess<chip::HostChip>, p)),
-            Err(e) => println!("Failed to start process #{}: {}", i, e),
+            Err(e) => debug!("Failed to start process #{}: {}", i, e),
         }
     }
 

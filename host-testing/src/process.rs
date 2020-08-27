@@ -10,15 +10,19 @@ use tock_cells::map_cell::MapCell;
 
 use host_emulation::common_types;
 
-use kernel::kernel_emulation::*;
-use kernel::mpu;
-use kernel::syscall::{self, Syscall, UserspaceKernelBoundary};
 use kernel::AppId;
 use kernel::AppSlice;
 use kernel::Chip;
 use kernel::Kernel;
 use kernel::ReturnCode;
 use kernel::Shared;
+use kernel::capabilities::ExternalProcessCapability;
+use kernel::debug;
+use kernel::mpu;
+use kernel::CallbackId;
+use kernel::syscall::{self, Syscall, UserspaceKernelBoundary};
+use kernel::procs::{State, Task, FunctionCallSource, FunctionCall,
+    ProcessType, Error};
 
 use core::cell::Cell;
 use core::fmt::Write;
@@ -82,6 +86,7 @@ impl<'a> UnixProcess<'a> {
 
     /// Starts the process and supplies necessary command line arguments.
     pub fn start(&self, socket_rx: &Path, socket_tx: &Path) -> Result<()> {
+        debug!("Starting process {}", self.proc_path.to_str().unwrap_or_default());
         let proc = process::Command::new(self.proc_path)
             .arg("--id")
             .arg(self.id.to_string())
@@ -224,10 +229,11 @@ pub struct EmulatedProcess<C: 'static + Chip> {
     state: Cell<State>,
     tasks: MapCell<VecDeque<Task>>,
     stored_state:
-        Cell<<<C as Chip>::UserspaceKernelBoundary as UserspaceKernelBoundary>::StoredState>,
+        MapCell<&'static mut <<C as Chip>::UserspaceKernelBoundary as UserspaceKernelBoundary>::StoredState>,
     grant_region: Cell<*mut *mut u8>,
     restart_count: Cell<usize>,
     debug: MapCell<ProcessDebug>,
+    external_process_cap: &'static dyn ExternalProcessCapability,
 }
 
 impl<C: 'static + Chip> EmulatedProcess<C> {
@@ -236,7 +242,8 @@ impl<C: 'static + Chip> EmulatedProcess<C> {
         name: &'static str,
         chip: &'static C,
         kernel: &'static Kernel,
-        start_state: &'static <<C as Chip>::UserspaceKernelBoundary as UserspaceKernelBoundary>::StoredState,
+        start_state: &'static mut <<C as Chip>::UserspaceKernelBoundary as UserspaceKernelBoundary>::StoredState,
+        external_process_cap: &'static dyn ExternalProcessCapability,
     ) -> Result<EmulatedProcess<C>> {
         let process = EmulatedProcess {
             app_id: Cell::new(app_id),
@@ -245,10 +252,11 @@ impl<C: 'static + Chip> EmulatedProcess<C> {
             kernel: kernel,
             state: Cell::new(State::Unstarted),
             tasks: MapCell::new(VecDeque::with_capacity(10)),
-            stored_state: Cell::new(*start_state),
+            stored_state: MapCell::new(start_state),
             grant_region: Cell::new(0 as *mut *mut u8),
             restart_count: Cell::new(0),
             debug: MapCell::new(ProcessDebug::default()),
+            external_process_cap: external_process_cap,
         };
 
         // Use a special pc of 0 to indicate that we need to exec the process.
@@ -263,7 +271,7 @@ impl<C: 'static + Chip> EmulatedProcess<C> {
             }));
         });
 
-        kernel.increment_work();
+        kernel.increment_work_external(external_process_cap);
         Ok(process)
     }
 }
@@ -285,7 +293,7 @@ impl<C: 'static + Chip> ProcessType for EmulatedProcess<C> {
             return false;
         }
 
-        self.kernel.increment_work();
+        self.kernel.increment_work_external(self.external_process_cap);
 
         let ret = self.tasks.map_or(false, |tasks| {
             tasks.push_back(task);
@@ -304,7 +312,7 @@ impl<C: 'static + Chip> ProcessType for EmulatedProcess<C> {
     fn dequeue_task(&self) -> Option<Task> {
         self.tasks.map_or(None, |tasks| {
             tasks.pop_front().map(|cb| {
-                self.kernel.decrement_work();
+                self.kernel.decrement_work_external(self.external_process_cap);
                 cb
             })
         })
@@ -329,7 +337,7 @@ impl<C: 'static + Chip> ProcessType for EmulatedProcess<C> {
     fn set_yielded_state(&self) {
         if self.state.get() == State::Running {
             self.state.set(State::Yielded);
-            self.kernel.decrement_work();
+            self.kernel.decrement_work_external(self.external_process_cap);
         }
     }
 
@@ -375,7 +383,10 @@ impl<C: 'static + Chip> ProcessType for EmulatedProcess<C> {
         match NonNull::new(buf_start_addr as *mut u8) {
             None => Ok(None),
             Some(buf_start) => {
-                let slice = unsafe { AppSlice::new(buf_start, size, self.appid()) };
+                let slice = unsafe {
+                    AppSlice::new_external(
+                        buf_start, size, self.appid(), self.external_process_cap)
+                };
                 Ok(Some(slice))
             }
         }
@@ -403,7 +414,7 @@ impl<C: 'static + Chip> ProcessType for EmulatedProcess<C> {
         let layout = match std::alloc::Layout::from_size_align(size, align) {
             Ok(l) => l,
             Err(e) => {
-                println!("Failed to alloc region: {}", e);
+                debug!("Failed to alloc region: {}", e);
                 return None;
             }
         };
@@ -422,7 +433,8 @@ impl<C: 'static + Chip> ProcessType for EmulatedProcess<C> {
             return None;
         }
 
-        if grant_num >= self.kernel.get_grant_count_and_finalize() {
+        if grant_num >= self.kernel.get_grant_count_and_finalize_external(
+            self.external_process_cap) {
             return None;
         }
 
@@ -434,40 +446,40 @@ impl<C: 'static + Chip> ProcessType for EmulatedProcess<C> {
     }
 
     unsafe fn set_syscall_return_value(&self, return_value: isize) {
-        let mut stored_state = self.stored_state.get();
-        self.chip
-            .userspace_kernel_boundary()
-            .set_syscall_return_value(0 as *const usize, &mut stored_state, return_value);
+        self.stored_state.map(|stored_state| {
+            self.chip
+                .userspace_kernel_boundary()
+                .set_syscall_return_value(0 as *const usize, stored_state, return_value);
+        });
     }
 
     unsafe fn set_process_function(&self, callback: FunctionCall) {
-        let mut stored_state = self.stored_state.get();
-        let res = self.chip.userspace_kernel_boundary().set_process_function(
-            0 as *const usize,
-            0,
-            &mut stored_state,
-            callback,
-        );
+        let res = self.stored_state.map(|stored_state| {
+            self.chip.userspace_kernel_boundary().set_process_function(
+                0 as *const usize,
+                0,
+                stored_state,
+                callback,
+            )
+        });
 
         match res {
-            Ok(_) => {
-                self.kernel.increment_work();
+            Some(Ok(_)) => {
+                self.kernel.increment_work_external(self.external_process_cap);
                 self.state.set(State::Running);
             }
 
-            Err(_) => {
+            None | Some(Err(_)) => {
                 self.set_fault_state();
             }
         }
     }
 
     unsafe fn switch_to(&self) -> Option<syscall::ContextSwitchReason> {
-        let mut stored_state = self.stored_state.get();
-        let res = self
-            .chip
-            .userspace_kernel_boundary()
-            .switch_to_process(0 as *const usize, &mut stored_state)
-            .1;
+        let res = self.stored_state.map(|stored_state| {
+            self.chip.userspace_kernel_boundary()
+                .switch_to_process(0 as *const usize, stored_state).1
+        })?;
 
         self.debug.map(|debug| {
             if res == syscall::ContextSwitchReason::TimesliceExpired {

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-kernel = { path = "../kernel", features = ["emulation"] }
+kernel = { path = "../kernel" }
 capsules = { path = "../capsules" }
 components = { path = "../boards/components" }
 tock-cells = { path = "../libraries/tock-cells" }
