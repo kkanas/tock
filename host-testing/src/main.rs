@@ -95,6 +95,7 @@ fn serve_external_interrupts(irq_source: UpperHalf) {
     });
 }
 
+static mut TX_DATA: &'static mut [u8; 128] = &mut [0; 128];
 #[no_mangle]
 pub unsafe fn reset_handler() {
     let main_loop_cap = create_capability!(capabilities::MainLoopCapability);
@@ -116,6 +117,17 @@ pub unsafe fn reset_handler() {
 
     let uart_mux =
         components::console::UartMuxComponent::new(uart, 0, dynamic_deferred_caller).finalize(());
+
+    {
+        // Uart won't work before console mux is initalized
+        // because uses tx_client is OptionalCell::empty()
+        // until console::UartMuxComponent::new calls set_transmit_client
+        let tx_str  = "Hello Test\n";
+        let tx_len = tx_str.len();
+        (&mut TX_DATA[..tx_len]).copy_from_slice(&tx_str.as_bytes()[..tx_len]);
+        use kernel::hil::uart::Transmit;
+        uart.transmit_buffer(TX_DATA, tx_len);
+    }
 
     let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
 
