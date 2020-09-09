@@ -90,6 +90,12 @@ impl LowerHalf {
 
         match interrupt {
             Ok(interrupt) => self.pending.push(interrupt),
+            Err(TryRecvError::Empty) => {
+                if !block {
+                    return;
+                }
+                kernel::debug!("Failed to receive interrupt: {}", TryRecvError::Empty);
+            }
             Err(e) => {
                 kernel::debug!("Failed to receive interrupt: {}", e);
             }
