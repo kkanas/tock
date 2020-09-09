@@ -19,7 +19,7 @@ pub struct UpperHalf {
 }
 
 pub struct LowerHalf {
-    reciever: Receiver<Interrupt>,
+    receiver: Receiver<Interrupt>,
     pending: BinaryHeap<Interrupt>,
 }
 
@@ -45,8 +45,8 @@ impl Ord for Interrupt {
 /// external interrupts.
 pub fn new_interrupt_channel(external_source: &Path) -> Result<(UpperHalf, LowerHalf)> {
     let socket = UnixDatagram::bind(external_source)?;
-    let (sender, reciever): (Sender<Interrupt>, Receiver<Interrupt>) = channel();
-    Ok((UpperHalf::new(sender, socket), LowerHalf::new(reciever)))
+    let (sender, receiver): (Sender<Interrupt>, Receiver<Interrupt>) = channel();
+    Ok((UpperHalf::new(sender, socket), LowerHalf::new(receiver)))
 }
 
 impl UpperHalf {
@@ -71,21 +71,21 @@ impl UpperHalf {
 }
 
 impl LowerHalf {
-    fn new(reciever: Receiver<Interrupt>) -> LowerHalf {
+    fn new(receiver: Receiver<Interrupt>) -> LowerHalf {
         LowerHalf {
-            reciever: reciever,
+            receiver: receiver,
             pending: BinaryHeap::new(),
         }
     }
 
-    fn recieve_interrupts(&mut self, block: bool) {
+    fn receive_interrupts(&mut self, block: bool) {
         let interrupt = if block {
-            match self.reciever.recv() {
+            match self.receiver.recv() {
                 Ok(inter) => Ok(inter),
                 Err(e) => Err(TryRecvError::from(e)),
             }
         } else {
-            self.reciever.try_recv()
+            self.receiver.try_recv()
         };
 
         match interrupt {
@@ -104,15 +104,15 @@ impl LowerHalf {
 
     pub fn wait_for_interrupt(&mut self) -> Interrupt {
         kernel::debug!("Sleeping...");
-        self.recieve_interrupts(true);
+        self.receive_interrupts(true);
         match self.pending.pop() {
             Some(interrupt) => interrupt,
-            None => panic!("Recieved empty interrupt."),
+            None => panic!("Received empty interrupt."),
         }
     }
 
     pub fn has_pending_interrupts(&mut self) -> bool {
-        self.recieve_interrupts(false);
+        self.receive_interrupts(false);
         self.pending.peek().is_some()
     }
 }
@@ -121,7 +121,7 @@ impl Iterator for &mut LowerHalf {
     type Item = Interrupt;
 
     fn next(&mut self) -> Option<Interrupt> {
-        self.recieve_interrupts(false);
+        self.receive_interrupts(false);
         self.pending.pop()
     }
 }
