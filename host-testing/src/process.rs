@@ -244,7 +244,7 @@ impl<C: 'static + Chip> EmulatedProcess<C> {
         kernel: &'static Kernel,
         start_state: &'static mut <<C as Chip>::UserspaceKernelBoundary as UserspaceKernelBoundary>::StoredState,
         external_process_cap: &'static dyn ExternalProcessCapability,
-    ) -> Result<EmulatedProcess<C>> {
+    ) -> core::result::Result<EmulatedProcess<C>, ()> {
         let process = EmulatedProcess {
             app_id: Cell::new(app_id),
             name: name,
@@ -258,6 +258,15 @@ impl<C: 'static + Chip> EmulatedProcess<C> {
             debug: MapCell::new(ProcessDebug::default()),
             external_process_cap: external_process_cap,
         };
+
+        let _ = process.stored_state.map(|stored_state| {
+            unsafe {
+                chip.userspace_kernel_boundary().initialize_process(
+                    0 as *const usize,
+                    0,
+                    stored_state)
+            }
+        }).ok_or(())?;
 
         // Use a special pc of 0 to indicate that we need to exec the process.
         process.tasks.map(|tasks| {

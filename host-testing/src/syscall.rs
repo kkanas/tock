@@ -64,8 +64,10 @@ impl kernel::syscall::UserspaceKernelBoundary for SysCall {
         _stack_size: usize,
         _state: &mut Self::StoredState,
     ) -> core::result::Result<*const usize, ()> {
-        // Nothing to be done here. libtock-[rs|c] and the host kernel can
-        // handle all the setup.
+        // Do nothing as Unix process will be started on first switch_to_process
+        // This is good place for synchronize libtock-rs startup
+        // Right now this is not needed b/c libtock-rs not require
+        // antyhing special right now
         Ok(stack_pointer as *mut usize)
     }
 
@@ -85,6 +87,8 @@ impl kernel::syscall::UserspaceKernelBoundary for SysCall {
         state: &mut Self::StoredState,
         callback: kernel::procs::FunctionCall,
     ) -> core::result::Result<*mut usize, *mut usize> {
+        // Do nothing as Unix process will be started on first
+        // switch_to_process
         state.syscall_ret = common_types::KernelReturn::new_cb(common_types::Callback::new(
             callback.pc,
             callback.argument0,
@@ -109,6 +113,9 @@ impl kernel::syscall::UserspaceKernelBoundary for SysCall {
 
         let return_value: Option<common_types::KernelReturn>;
 
+        // Start application process here when, as this is first
+        // function called by scheduler when switching to app process
+        // for first time
         if !process.was_started() {
             let transport = self.get_transport();
 

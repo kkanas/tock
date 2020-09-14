@@ -156,7 +156,7 @@ pub unsafe fn reset_handler() {
             EXTERNAL_PROCESS_CAP,
         ) {
             Ok(p) => PROCESSES[i] = Some(static_init!(process::EmulatedProcess<chip::HostChip>, p)),
-            Err(e) => debug!("Failed to start process #{}: {}", i, e),
+            Err(_) => debug!("Failed to start process #{}: ", i),
         }
     }
 
