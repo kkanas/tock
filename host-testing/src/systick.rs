@@ -4,7 +4,7 @@ use std::time::{SystemTime, SystemTimeError};
 
 pub struct SysTick {
     start_time: Cell<SystemTime>,
-    offset: Cell<u32>,
+    set_duration_us: Cell<u32>,
     enabled: Cell<bool>,
 }
 
@@ -12,41 +12,53 @@ impl SysTick {
     pub fn new() -> SysTick {
         SysTick {
             start_time: Cell::new(SystemTime::now()),
-            offset: Cell::new(0),
+            set_duration_us: Cell::new(0),
             enabled: Cell::new(true),
         }
     }
 
-    fn delta_us(&self) -> Result<u128, SystemTimeError> {
+    fn elapsed_us(&self) -> Result<u128, SystemTimeError> {
         let now = SystemTime::now();
-        let delta = match now.duration_since(self.start_time.get()) {
+        let elapsed_us = match now.duration_since(self.start_time.get()) {
             Ok(time) => time,
             Err(e) => return Err(e),
         };
-        Ok(delta.as_micros())
+        Ok(elapsed_us.as_micros())
     }
 }
 
 impl kernel::SysTick for SysTick {
     fn set_timer(&self, us: u32) {
         self.start_time.set(SystemTime::now());
-        self.offset.set(us);
+        self.set_duration_us.set(us);
     }
 
     fn greater_than(&self, us: u32) -> bool {
-        let delta = match self.delta_us() {
+        if !self.enabled.get() {
+            return false;
+        }
+        let elapsed_us = match self.elapsed_us() {
             Ok(time) => time,
             Err(_) => return false,
-        } as u32;
-        self.enabled.get() && delta > us
+        } ;
+        let remaining_us = if self.set_duration_us.get() as u128 > elapsed_us {
+            self.set_duration_us.get() as u128 - elapsed_us
+        } else {
+            0
+        };
+        return remaining_us >= us as u128;
     }
 
     fn overflowed(&self) -> bool {
-        let delta = match self.delta_us() {
+        if !self.enabled.get() {
+            return true;
+        }
+
+        let elapsed_us = match self.elapsed_us() {
             Ok(time) => time,
             Err(_) => return true,
         };
-        delta > u32::max_value() as u128
+        return elapsed_us > self.set_duration_us.get() as u128;
     }
 
     fn reset(&self) {
