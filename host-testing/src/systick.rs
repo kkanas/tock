@@ -6,6 +6,7 @@ pub struct SysTick {
     start_time: Cell<SystemTime>,
     set_duration_us: Cell<u32>,
     enabled: Cell<bool>,
+    interupt_enabled: Cell<bool>
 }
 
 impl SysTick {
@@ -14,6 +15,7 @@ impl SysTick {
             start_time: Cell::new(SystemTime::now()),
             set_duration_us: Cell::new(0),
             enabled: Cell::new(true),
+            interupt_enabled: Cell::new(false),
         }
     }
 
@@ -24,6 +26,18 @@ impl SysTick {
             Err(e) => return Err(e),
         };
         Ok(elapsed_us.as_micros())
+    }
+
+    pub fn get_systick_left(&self) -> Option<u128> {
+        if !self.enabled.get() {
+            return None;
+        }
+        let elapsed_us = match self.elapsed_us() {
+            Ok(time) => time,
+            Err(_) =>  0,
+        };
+        let left = self.set_duration_us.get() as u128 - elapsed_us;
+        return Some(left);
     }
 }
 
@@ -64,12 +78,13 @@ impl kernel::SysTick for SysTick {
     fn reset(&self) {
         self.enabled.set(false);
         self.set_timer(0);
+        self.interupt_enabled.set(false);
     }
 
     fn enable(&self, with_interrupt: bool) {
         self.enabled.set(true);
         if with_interrupt {
-            panic!("Timer interrupts not implemented");
+            self.interupt_enabled.set(true);
         }
     }
 }

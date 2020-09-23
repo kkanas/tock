@@ -3,7 +3,8 @@ use std::collections::BinaryHeap;
 use std::mem::{size_of, transmute};
 use std::os::unix::net::UnixDatagram;
 use std::path::Path;
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{channel, Receiver, Sender,  RecvTimeoutError};
+use std::time::Duration;
 
 use crate::Result;
 
@@ -78,41 +79,42 @@ impl LowerHalf {
         }
     }
 
-    fn receive_interrupts(&mut self, block: bool) {
-        let interrupt = if block {
-            match self.receiver.recv() {
-                Ok(inter) => Ok(inter),
-                Err(e) => Err(TryRecvError::from(e)),
+    fn receive_interrupts(&mut self, wait_us : Option<u128>) {
+        if wait_us.is_none() {
+            match self.receiver.try_recv() {
+                Ok(interrupt) => self.pending.push(interrupt),
+                Err(e) => {
+                    kernel::debug!("Failed to receive interrupt: {}", e);
+                },
             }
         } else {
-            self.receiver.try_recv()
-        };
-
-        match interrupt {
-            Ok(interrupt) => self.pending.push(interrupt),
-            Err(TryRecvError::Empty) => {
-                if !block {
-                    return;
-                }
-                kernel::debug!("Failed to receive interrupt: {}", TryRecvError::Empty);
+            let wait_us = Duration::from_millis(wait_us.unwrap() as u64);
+            match self.receiver.recv_timeout(wait_us) {
+                Ok(interrupt) => self.pending.push(interrupt),
+                Err(RecvTimeoutError::Timeout) => { },
+                Err(e) => {
+                    kernel::debug!("Failed to receive interrupt: {}", e);
+                },
             }
-            Err(e) => {
-                kernel::debug!("Failed to receive interrupt: {}", e);
-            }
-        };
+        }
     }
 
-    pub fn wait_for_interrupt(&mut self) -> Interrupt {
+    pub fn wait_for_interrupt(&mut self, wait_us : Option<u128>) -> Option<Interrupt> {
         kernel::debug!("Sleeping...");
-        self.receive_interrupts(true);
+        self.receive_interrupts(wait_us);
         match self.pending.pop() {
-            Some(interrupt) => interrupt,
-            None => panic!("Received empty interrupt."),
+            Some(interrupt) => Some(interrupt),
+            None => {
+                if wait_us.is_some() {
+                    panic!("Received empty interrupt.");
+                }
+                    None
+            },
         }
     }
 
     pub fn has_pending_interrupts(&mut self) -> bool {
-        self.receive_interrupts(false);
+        self.receive_interrupts(None);
         self.pending.peek().is_some()
     }
 }
@@ -121,7 +123,7 @@ impl Iterator for &mut LowerHalf {
     type Item = Interrupt;
 
     fn next(&mut self) -> Option<Interrupt> {
-        self.receive_interrupts(false);
+        self.receive_interrupts(None);
         self.pending.pop()
     }
 }

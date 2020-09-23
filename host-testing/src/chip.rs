@@ -71,7 +71,8 @@ impl<'a> kernel::Chip for HostChip<'a> {
     }
 
     fn sleep(&self) {
-        self.irq_must_map(|irq_lower| irq_lower.wait_for_interrupt());
+        let wait_untill = self.systick.get_systick_left();
+        self.irq_must_map(|irq_lower| irq_lower.wait_for_interrupt(wait_untill));
     }
 
     unsafe fn atomic<F, R>(&self, f: F) -> R
