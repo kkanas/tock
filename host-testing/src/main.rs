@@ -109,6 +109,7 @@ pub unsafe fn reset_handler() {
         DynamicDeferredCall,
         DynamicDeferredCall::new(dynamic_deferred_call_clients)
     );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
 
     let stdin = static_init!(io::Stdin, io::stdin());
     let stdout = static_init!(io::Stdout, io::stdout());
