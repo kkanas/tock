@@ -68,7 +68,8 @@ impl<'a> Transmit<'a> for UartIO<'a> {
             }
         };
 
-        let ret = match stream.write(tx_data) {
+        let (tx_buf , _) : (&mut [u8], _) = tx_data.split_at_mut(tx_len);
+        let ret = match stream.write(tx_buf) {
             Ok(written) => {
                 if written == tx_len {
                     client.transmitted_buffer(tx_data, tx_len, ReturnCode::SUCCESS);
